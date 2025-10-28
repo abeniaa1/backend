@@ -117,28 +117,52 @@ app.get("/backups/:id/files", async (req, res) => {
     });
   }
 });
+// 3️⃣ Download a single file (works with both / and \ paths)
+app.get("/download/:backupId/*", async (req, res) => {
+  const { backupId } = req.params;
+  let relativePath = decodeURIComponent(req.params[0]);
 
-// 2.5️⃣ List backups for downloads (id, name, timestamp)
-app.get("/downloads", async (req, res) => {
+  console.log(`📥 Download request: backupId=${backupId}, originalPath=${relativePath}`);
+
+  // Normalize path
+  let adjustedPath = relativePath.replace(/^assets[\\/]/, ""); // remove assets/ prefix if present
+  let normalizedForward = adjustedPath.replace(/\\/g, "/");
+  let normalizedBackward = adjustedPath.replace(/\//g, "\\");
+
   try {
-    const limit = parseInt(req.query.limit) || 50;
-    const backups = await metadataCollection
-      .find({}, {
-        projection: { backup_id: 1, backup_name: 1, timestamp: 1, _id: 0 }
-      })
-      .sort({ timestamp: -1 })
-      .limit(limit)
-      .toArray();
+    // Try both path styles
+    const fileDoc = await filesCollection.findOne({
+      backup_id: backupId,
+      $or: [
+        { relative_path: normalizedForward },
+        { relative_path: normalizedBackward },
+      ],
+      is_chunked: { $ne: true },
+    });
 
-    res.json({
-      success: true,
-      count: backups.length,
-      backups: backups
+    if (fileDoc && fileDoc.content) {
+      const fileBuffer = Buffer.from(fileDoc.content.buffer);
+      const mimeType = mime.lookup(fileDoc.filename) || "application/octet-stream";
+
+      res.setHeader("Content-Type", mimeType);
+      res.setHeader("Content-Disposition", `attachment; filename="${fileDoc.filename}"`);
+      return res.send(fileBuffer);
+    }
+
+    console.log(`❌ 404 File not found for any path style:
+      - forward: ${normalizedForward}
+      - backward: ${normalizedBackward}`);
+
+    res.status(404).json({
+      success: false,
+      error: "File not found",
+      details: { backupId, requestedPath: relativePath },
     });
   } catch (err) {
+    console.error(`💥 Download error: ${err.message}`);
     res.status(500).json({
       success: false,
-      error: "Failed to fetch downloads"
+      error: "Failed to download file",
     });
   }
 });
@@ -176,13 +200,22 @@ app.get("/path/:backupId", async (req, res) => {
 // 3️⃣ Download a single file (streaming for large files)
 app.get("/download/:backupId/*", async (req, res) => {
   const { backupId } = req.params;
-  const relativePath = decodeURIComponent(req.params[0]);
+  let relativePath = decodeURIComponent(req.params[0]);
+
+  console.log(`📥 Download request: backupId=${backupId}, originalPath=${relativePath}`);
+
+  // Strip 'assets/' prefix if present to match stored paths
+  let adjustedPath = relativePath;
+  if (relativePath.startsWith('assets/')) {
+    adjustedPath = relativePath.substring(7);
+    console.log(`🔄 Adjusted path: ${adjustedPath}`);
+  }
 
   try {
-    // Find file document first
+    // Find file document using the adjusted path
     const fileDoc = await filesCollection.findOne({
       backup_id: backupId,
-      relative_path: relativePath,
+      relative_path: adjustedPath,
       is_chunked: { $ne: true },
     });
 
@@ -195,11 +228,23 @@ app.get("/download/:backupId/*", async (req, res) => {
       return res.send(fileBuffer);
     }
 
+    // Log specific 404 error details
+    console.log(`❌ 404 File not found: backupId=${backupId}, requestedPath=${relativePath}, adjustedPath=${adjustedPath}`);
+    console.log(`🔍 Full 404 request: ${req.method} ${req.originalUrl}`);
+    console.log(`📋 Request headers: ${JSON.stringify(req.headers)}`);
+    
     res.status(404).json({ 
       success: false,
-      error: "File not found"
+      error: "File not found",
+      details: {
+        backupId,
+        requestedPath: relativePath,
+        adjustedPath,
+        fullUrl: req.originalUrl
+      }
     });
   } catch (err) {
+    console.error(`💥 Download error: ${err.message}`);
     res.status(500).json({ 
       success: false,
       error: "Failed to download file"
