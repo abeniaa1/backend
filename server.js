@@ -84,21 +84,21 @@ app.get("/backups", async (req, res) => {
 app.get("/backups/:id/files", async (req, res) => {
   const { id } = req.params;
   const limit = parseInt(req.query.limit) || 100;
-  
+
   try {
     const files = await filesCollection
       .find(
-        { 
-          backup_id: id, 
+        {
+          backup_id: id,
           is_directory: { $ne: true }
         },
-        { 
-          projection: { 
-            _id: 0, 
-            relative_path: 1, 
-            file_size: 1, 
-            filename: 1 
-          } 
+        {
+          projection: {
+            _id: 0,
+            relative_path: 1,
+            file_size: 1,
+            filename: 1
+          }
         }
       )
       .limit(limit)
@@ -111,9 +111,34 @@ app.get("/backups/:id/files", async (req, res) => {
       files: files
     });
   } catch (err) {
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
       error: "Failed to fetch files"
+    });
+  }
+});
+
+// 2.5️⃣ List backups for downloads (id, name, timestamp)
+app.get("/downloads", async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 50;
+    const backups = await metadataCollection
+      .find({}, {
+        projection: { backup_id: 1, backup_name: 1, timestamp: 1, _id: 0 }
+      })
+      .sort({ timestamp: -1 })
+      .limit(limit)
+      .toArray();
+
+    res.json({
+      success: true,
+      count: backups.length,
+      backups: backups
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch downloads"
     });
   }
 });
