@@ -60,20 +60,20 @@ app.get("/backups", async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 50;
     const backups = await metadataCollection
-      .find({}, { 
-        projection: { _id: 0, name: 1, timestamp: 1, size: 1 } 
+      .find({}, {
+        projection: { backup_id: 1, backup_name: 1, timestamp: 1, total_size: 1, _id: 0 }
       })
       .sort({ timestamp: -1 })
       .limit(limit)
       .toArray();
-    
+
     res.json({
       success: true,
       count: backups.length,
       backups: backups
     });
   } catch (err) {
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
       error: "Failed to fetch backups"
     });
