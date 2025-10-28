@@ -143,6 +143,36 @@ app.get("/downloads", async (req, res) => {
   }
 });
 
+// 2.6️⃣ Get paths for a specific backup
+app.get("/path/:backupId", async (req, res) => {
+  const { backupId } = req.params;
+
+  try {
+    const files = await filesCollection
+      .find(
+        { backup_id: backupId },
+        {
+          projection: { relative_path: 1, _id: 0 }
+        }
+      )
+      .toArray();
+
+    const paths = files.map(file => file.relative_path);
+
+    res.json({
+      success: true,
+      backup_id: backupId,
+      count: paths.length,
+      paths: paths
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch paths"
+    });
+  }
+});
+
 // 3️⃣ Download a single file (streaming for large files)
 app.get("/download/:backupId/*", async (req, res) => {
   const { backupId } = req.params;
